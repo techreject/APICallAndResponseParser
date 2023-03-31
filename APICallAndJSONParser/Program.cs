@@ -10,12 +10,42 @@ using System.Text.Json;
 using System.Linq.Expressions;
 using System.Threading;
 using System.Linq;
+// 03/30/23 - Installed nuget packages
+// System.text.json 7.0.2
+// System.NET.Http.json 7.0.1
+// This addressed error
+//      System.IO.FileNotFoundException HResult=0x80070002 Message=Could not load file or assembly 'System.Memory,
+//      Version=4.0.1.1, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51' or one of its dependencies. The system
+//      cannot find the file specified. Source=System.Text.Json StackTrace: at
+//      System.Text.Json.JsonSerializerOptions.GetDefaultSimpleConverters() at
+//      System.Text.Json.JsonSerializerOptions.RootBuiltInConverters() at
+//      System.Text.Json.JsonSerializerOptions.InitializeForReflectionSerializer() at
+//      System.Text.Json.JsonSerializer.GetTypeInfo(JsonSerializerOptions options, Type runtimeType) at
+//      System.Text.Json.JsonSerializer.DeserializeAsync[TValue](Stream utf8Json, JsonSerializerOptions options, CancellationToken cancellationToken) at
+//      APICallAndJSONParser.Program.<ProcessRepositoriesAsyncLoop>d__3.MoveNext() in
+//      C:\Users\Matthew\source\repos\APICallAndResponseParser\APICallAndJSONParser\Program.cs:line 108 at
+//      System.Runtime.CompilerServices.TaskAwaiter.ThrowForNonSuccess(Task task) at
+//      System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task) at
+//      System.Runtime.CompilerServices.TaskAwaiter.GetResult() at
+//      APICallAndJSONParser.Program.<RunAsync>d__1.MoveNext() in
+//      C:\Users\Matthew\source\repos\APICallAndResponseParser\APICallAndJSONParser\Program.cs:line 61 at
+//      System.Runtime.CompilerServices.TaskAwaiter.ThrowForNonSuccess(Task task) at System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task) at
+//      System.Runtime.CompilerServices.TaskAwaiter.GetResult() at APICallAndJSONParser.Program.Main(String[] args) in
+//      C:\Users\Matthew\source\repos\APICallAndResponseParser\APICallAndJSONParser\Program.cs:line 20
 
 namespace APICallAndJSONParser
 {
     internal class Program
     {
         static void Main(string[] args)
+        {
+            RunAsync().GetAwaiter().GetResult();
+        }
+        // In order to get this to run properly, I had to break this out into two separate functions. I found this 
+        // out by looking at the below example on MS:
+        //
+        // https://learn.microsoft.com/en-us/aspnet/web-api/overview/advanced/calling-a-web-api-from-a-net-client
+        static async Task RunAsync()
         {
             // 03/29/2023 - Use an HttpClient to handle requests and responses
             HttpClient client = new HttpClient();
@@ -45,10 +75,39 @@ namespace APICallAndJSONParser
             // .These headers are checked by the GitHub server code and are necessary to retrieve information from GitHub.
             client.DefaultRequestHeaders.Add("User-Agent", ".NET Foundation Repository Reporter");
 
+            Console.WriteLine("Outputting non-formatted json content");
             // 03/29/2023 - Use the HttpClient class to make HTTP requests.
             // HttpClient supports only async methods for its long-running APIs.
             // So the following steps create an async method and call it from the Main method.
-            ProcessRepositoriesAsyncViaConsole(client).Wait();
+            await ProcessRepositoriesAsyncViaConsole(client);
+
+            Console.WriteLine("Outputting json list");
+            // 03/30/23 - This performs an output to the command line, but does this by cycling through each
+            // json object and displaying it. This also gives the option to show all of them at once, but wil
+            // do this by cycling through each object and not stopping until the end of the list
+            await ProcessRepositoriesAsyncLoop(client);
+
+            // 03/30/23 - Create a list of JSON objects and return them from the function to be processed
+            // outside of the function
+            var repositories = await ProcessRepositoriesAsync(client);
+
+            Console.WriteLine("Outputting json list");
+            // 03/30/23 - Cycle through each object in the list
+            foreach (var repo in repositories)
+            {
+                // 03/30/23 - Display those objects on the console window
+                Console.WriteLine($"\tName: {repo.Name}");
+                Console.WriteLine($"\tHomepage: {repo.Homepage}");
+                Console.WriteLine($"\tGitHub: {repo.GitHubHomeUrl}");
+                Console.WriteLine($"\tDescription: {repo.Description}");
+                Console.WriteLine($"\tWatchers: {repo.Watchers:#,0}");
+                Console.WriteLine($"\tLast push: {repo.ConvertToEST(repo.LastPushUtc)}");
+                Console.WriteLine();
+            }
+
+            // 03/30/2023 - Gives pause so you can see output on the command line
+            Console.Write("Press Enter to continue.");
+            Console.ReadLine();
         }
 
         // 03/29/2023 - Method calls the GitHub endpoint that returns a list of all repositories under
@@ -69,7 +128,7 @@ namespace APICallAndJSONParser
         // the .NET foundation organization. The list - returned in json format - is then deserailized and
         // saved
 
-        static async Task ProcessRepositoriesAsync(HttpClient client)
+        static async Task ProcessRepositoriesAsyncLoop(HttpClient client)
         {
             // 03/29/2023 - Use the serializer to convert JSON into C# objects
 
@@ -95,13 +154,19 @@ namespace APICallAndJSONParser
                 if (!showAll)
                 {
                     // 03/29/2023 - Output the json value that was deserialized
-                    Console.Write(repo.name);
+                    Console.WriteLine($"\tName: {repo.Name}");
+                    Console.WriteLine($"\tHomepage: {repo.Homepage}");
+                    Console.WriteLine($"\tGitHub: {repo.GitHubHomeUrl}");
+                    Console.WriteLine($"\tDescription: {repo.Description}");
+                    Console.WriteLine($"\tWatchers: {repo.Watchers:#,0}");
+                    Console.WriteLine($"\tLast push: {repo.ConvertToEST(repo.LastPushUtc)}");
+                    Console.WriteLine();
 
                     // 03/29/2023 - Gives pause so you can see output on the command line. If user continues to
                     // press enter, it will show 1 record at a time. If user enters -1, then it will proceed
                     // to set a flag, preventing the input field from showing and displaying all values in the 
                     // the command line
-                    Console.Write("Press Enter to continue. Or input -1 to list all");
+                    Console.WriteLine("Press Enter to continue. Or input -1 to list all");
                     // 03/29/2023 - Store the response from the user
                     var response = Console.ReadLine();
 
@@ -115,12 +180,39 @@ namespace APICallAndJSONParser
                 else
                 {
                     // 03/29/2023 - Output the json value that was deserialized
-                    Console.Write(repo.name);
+                    Console.WriteLine($"\tName: {repo.Name}");
+                    Console.WriteLine($"\tHomepage: {repo.Homepage}");
+                    Console.WriteLine($"\tGitHub: {repo.GitHubHomeUrl}");
+                    Console.WriteLine($"\tDescription: {repo.Description}");
+                    Console.WriteLine($"\tWatchers: {repo.Watchers:#,0}");
+                    Console.WriteLine($"\tLast push: { repo.ConvertToEST(repo.LastPushUtc) }");
+                    Console.WriteLine();
                 }
             }
-            // Continue program - this allows a pause in the app, giving the user time to read through the output
-            Console.Write("Press Enter to continue.");
+            // 03/29/2023 - Continue program - this allows a pause in the app, giving the user time to read through the output
+            Console.WriteLine("Fin... Press Enter to close the window.");
             Console.ReadLine();
+        }
+        // 03/30/23 - The ProcessRepositoriesAsync method can do the async work and return a collection of the repositories.
+        // Change that method to return Task<List<Repository>>
+        static async Task<List<Repository>> ProcessRepositoriesAsync(HttpClient client)
+        {
+            // 03/30/23 - Return the repositories after processing the JSON response:
+            Stream stream = await client.GetStreamAsync("https://api.github.com/orgs/dotnet/repos");
+            var repositories = await JsonSerializer.DeserializeAsync<List<Repository>>(stream);
+
+            // 03/30/23 handles if the variable is null, it will set it to, set it to something, even
+            // if the object is empty
+            if (repositories == null)
+            {
+                repositories = new List<Repository>();
+                // 03/30/23 - Added a warning in case this happens, so I know why nothing was outputted
+                // I can then troubleshoot
+                Console.WriteLine("WARNING: List returned was empty!");
+            }
+
+            // 03/30/23 - Return the repositories after processing the JSON response:
+            return repositories;
         }
     }
 }
